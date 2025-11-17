@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Player Dashboard</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="grid">
+    <nav class="nav">
+      <div class="brand"><div class="brand-badge"></div> Arena Booker</div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div id="walletBadge" class="wallet">Wallet: ₹0</div>
+        <a class="tab" href="./player.html">Logout</a>
+      </div>
+    </nav>
+
+    
+
+    <div id="dayBanner" class="banner" style="display:none;"></div>
+
+    <main class="container">
+      <div class="grid-2">
+        <section class="card">
+          <div class="card-header">
+            <div class="title">Recharge Wallet</div>
+            <div class="subtitle">Use admin provided code</div>
+          </div>
+          <div class="content">
+            <div id="rcMsg" class="notice" style="display:none"></div>
+            <div class="row">
+              <input class="input" id="rc_code" placeholder="ABCD-7823">
+              <button class="btn" id="rc_btn">Add value</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-header">
+            <div class="title">Book Slot</div>
+            <div class="subtitle">Choose date, table, slot</div>
+          </div>
+          <div class="content">
+            <div class="row" style="margin-bottom:12px;">
+              <input type="date" class="input" id="bk_date">
+              <select class="input" id="bk_table"></select>
+            </div>
+            <div class="row" style="margin-bottom:12px;">
+              <input class="input" id="bk_seats" placeholder="Seats (1)" value="1">
+            </div>
+            <div id="slots" class="slots"></div>
+            <div id="bkMsg" class="notice" style="display:none; margin-top:12px"></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="card" style="margin-top:24px;">
+        <div class="card-header">
+          <div class="title">My Bookings</div>
+          <div class="subtitle">Today and upcoming</div>
+        </div>
+        <div class="content" id="myBookings"></div>
+      </section>
+    </main>
+
+    <footer class="footer">Play hard. Book smart.</footer>
+  </div>
+
+    <div id="confirmOverlay" class="modal-overlay">
+      <div class="modal">
+        <div class="content" id="confirmText"></div>
+        <div class="modal-actions">
+          <button class="btn secondary" id="confirmCancel">Cancel</button>
+          <button class="btn" id="confirmOk">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
+    import { initializeFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, addDoc, enableNetwork } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
+
+    const cfg = {
+      apiKey: "AIzaSyC82WNipslgbxCObtoSs9a9o32LfMKQ7lo",
+  authDomain: "wrwork.firebaseapp.com",
+  databaseURL: "https://wrwork-default-rtdb.firebaseio.com",
+  projectId: "wrwork",
+  storageBucket: "wrwork.firebasestorage.app",
+  messagingSenderId: "879424926024",
+  appId: "1:879424926024:web:c07d7fc5bb2aca9dca437d",
+  measurementId: "G-J0744QC9T9"
+    };
+    const app = initializeApp(cfg);
+    const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
+    async function ensureNetwork() {
+      if (!navigator.onLine) return showErr('You appear to be offline');
+      try { await enableNetwork(db); } catch (e) { showErr(e); }
+    }
+    window.addEventListener('online', ensureNetwork);
+    window.addEventListener('offline', () => showErr('You appear to be offline'));
+    ensureNetwork();
+    if (location.protocol === 'file:') showErr('Open these pages via a local server (http://localhost) instead of file://');
+
+    function msg(el, text, ok = false) {
+      el.style.display = 'block';
+      el.className = 'notice ' + (ok ? 'ok' : 'error');
+      el.textContent = text;
+    }
+    function showErr(err) {
+      const m = document.getElementById('globalMsg'); if (!m) return;
+      const msg = (err && err.message) ? err.message : String(err);
+      const code = err && (err.code || err.name) ? ` (${err.code || err.name})` : '';
+      m.style.display='block'; m.textContent = 'Error: ' + msg + code;
+    }
+    window.addEventListener('unhandledrejection', e => showErr(e.reason || e));
+    window.addEventListener('error', e => showErr(e.error || e.message));
+    function wrap(fn) { return async (...args) => { try { return await fn(...args); } catch (e) { showErr(e); } } }
+
+    const player = JSON.parse(localStorage.getItem('player') || '{}');
+    if (!player.username) window.location.href = './player.html';
+    document.getElementById('walletBadge').textContent = `Wallet: ₹${player.wallet ?? 0}`;
+
+    async function refreshWallet() {
+      const snap = await getDoc(doc(db, 'players', player.username));
+      const d = snap.data();
+      player.wallet = d.wallet || 0;
+      localStorage.setItem('player', JSON.stringify(player));
+      document.getElementById('walletBadge').textContent = `Wallet: ₹${player.wallet}`;
+    }
+
+    let tablesCache = {};
+    async function loadTables() {
+      const sel = document.getElementById('bk_table');
+      sel.innerHTML = '';
+      const qs = await getDocs(collection(db, 'tables'));
+      const arr = [];
+      qs.forEach(s => arr.push({ id: s.id, ...s.data() }));
+      arr.sort((a,b) => (a.name||a.id).localeCompare(b.name||b.id));
+      tablesCache = {};
+      for (const t of arr) {
+        const o = document.createElement('option');
+        o.value = t.id;
+        o.textContent = `${t.name || t.id} • ₹${t.pricePerSlot || 0}`;
+        sel.appendChild(o);
+        tablesCache[t.id] = t;
+      }
+      if (arr.length === 0) {
+        const o = document.createElement('option'); o.value = ''; o.textContent = 'No tables'; sel.appendChild(o);
+      }
+    }
+
+    
+
+    async function renderSlots() {
+      const date = document.getElementById('bk_date').value;
+      const tableId = document.getElementById('bk_table').value;
+      const wrap = document.getElementById('slots');
+      wrap.innerHTML = '';
+      if (!date || !tableId) return;
+      const daySnap = await getDoc(doc(db,'dayBlocks',date));
+      const dayData = daySnap.exists() ? daySnap.data() : null;
+      const banner = document.getElementById('dayBanner');
+      if (dayData && dayData.noTT) { banner.style.display='block'; banner.textContent = `No TT today • ${dayData.reason || ''}`; } else { banner.style.display='none'; banner.textContent=''; }
+      const tableSnap = await getDoc(doc(db,'tables',tableId));
+      const table = tableSnap.exists()?tableSnap.data():{};
+      const slots = table.slots || [];
+      if (!slots.length) { const div=document.createElement('div'); div.className='notice'; div.textContent='No slots configured by admin'; wrap.appendChild(div); return; }
+      const qs = await getDocs(query(collection(db, 'bookings'), where('date','==',date), where('tableId','==',tableId)));
+      const used = {};
+      qs.forEach(s => { const d = s.data(); used[d.slot] = (used[d.slot]||0) + (d.seats||1); });
+      const mbs = await getDocs(query(collection(db,'maintenanceBlocks'), where('date','==',date), where('tableId','==',tableId)));
+      const blockedRanges = []; mbs.forEach(s=>blockedRanges.push(s.data()));
+      for (const s of slots) {
+        const div = document.createElement('div');
+        const cap = table.capacity || 0;
+        const u = used[s] || 0;
+        const left = Math.max(0, cap - u);
+        let isBlocked = false;
+        const start = s.split('-')[0];
+        for (const b of blockedRanges) { if (start >= b.from && start < b.to) { isBlocked = true; break; } }
+        const disabled = (left===0 || isBlocked || (dayData && dayData.noTT));
+        div.className = 'slot ' + (disabled ? 'booked' : 'available');
+        const title = document.createElement('div'); title.className='slot-title'; title.textContent = s;
+        const sub = document.createElement('div'); sub.className='slot-sub';
+        sub.textContent = `${table.name || tableId} • capacity ${cap} • used ${u} • left ${left}${isBlocked?' • maintenance':''}${(dayData && dayData.noTT)?' • no TT':''}`;
+        div.appendChild(title); div.appendChild(sub);
+        if (!disabled) { div.style.cursor='pointer'; div.addEventListener('click', () => bookSlot(date, tableId, s, left, table)); }
+        wrap.appendChild(div);
+      }
+    }
+
+    async function recharge() {
+      const code = document.getElementById('rc_code').value.trim().toUpperCase();
+      const m = document.getElementById('rcMsg');
+      if (!code) return msg(m, 'Enter a code');
+      const snap = await getDoc(doc(db, 'rechargeCodes', code));
+      if (!snap.exists()) return msg(m, 'Invalid code');
+      const d = snap.data();
+      if (d.isUsed) return msg(m, 'Code already used');
+      if (d.forUser && d.forUser !== player.username) return msg(m, 'Code not assigned to you');
+      const value = d.value || 0;
+      await updateDoc(doc(db, 'players', player.username), { wallet: (player.wallet || 0) + value });
+      await updateDoc(doc(db, 'rechargeCodes', code), { isUsed: true, usedBy: player.username, usedAt: Date.now() });
+      await addDoc(collection(db,'transactions'), { type:'recharge', code, username: player.username, amount: value, createdAt: Date.now() });
+      await refreshWallet();
+      msg(m, `Added ₹${value} to wallet`, true);
+      document.getElementById('rc_code').value = '';
+    }
+
+    let confirmAction = null;
+    function openConfirm(text, onOk) {
+      document.getElementById('confirmText').textContent = text;
+      confirmAction = onOk;
+      document.getElementById('confirmOverlay').style.display = 'flex';
+    }
+    function closeConfirm() { document.getElementById('confirmOverlay').style.display = 'none'; confirmAction = null; }
+    document.getElementById('confirmCancel').addEventListener('click', closeConfirm);
+    document.getElementById('confirmOk').addEventListener('click', () => { if (confirmAction) confirmAction(); closeConfirm(); });
+
+    async function bookSlot(date, tableId, slot, left, table) {
+      const m = document.getElementById('bkMsg');
+      const seats = parseInt(document.getElementById('bk_seats').value.trim() || '1', 10);
+      if (seats < 1) return msg(m, 'Enter seats');
+      if (seats > left) return msg(m, 'Not enough vacancies');
+      const price = table.pricePerSlot || 0;
+      const total = price * seats;
+      if ((player.wallet || 0) < total) return msg(m, 'Insufficient wallet');
+      openConfirm(`Confirm booking • Table: ${table.name || tableId} • Slot: ${slot} • Seats: ${seats} • Total: ₹${total}`, async () => {
+        await addDoc(collection(db,'bookings'), { date, tableId, slot, playerUsername: player.username, seats, status: 'confirmed', createdAt: Date.now() });
+        await updateDoc(doc(db, 'players', player.username), { wallet: player.wallet - total });
+        await addDoc(collection(db,'transactions'), { type:'booking', username: player.username, amount: -total, tableId, slot, seats, createdAt: Date.now() });
+        await refreshWallet();
+        msg(m, `Your slot is confirmed for ${tableId} at ${slot}.`, true);
+        await renderSlots();
+        await loadMyBookings();
+      });
+    }
+
+    async function loadMyBookings() {
+      const list = document.getElementById('myBookings');
+      list.innerHTML = '';
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth()+1).padStart(2,'0');
+      const dd = String(today.getDate()).padStart(2,'0');
+      const tdate = `${yyyy}-${mm}-${dd}`;
+      const qs = await getDocs(query(collection(db, 'bookings'), where('playerUsername','==',player.username)));
+      const arr = [];
+      qs.forEach(s => arr.push(s.data()));
+      arr.sort((a,b) => a.date.localeCompare(b.date));
+      for (const b of arr) {
+        const div = document.createElement('div');
+        div.className = 'notice ' + (b.date === tdate ? 'ok' : '');
+        div.textContent = `${b.date} • ${b.tableId} • ${b.slot} • seats ${b.seats || 1} • ${b.status}`;
+        list.appendChild(div);
+      }
+      if (arr.length === 0) {
+        const div = document.createElement('div'); div.className='notice'; div.textContent='No bookings yet'; list.appendChild(div);
+      }
+    }
+
+    document.getElementById('bk_date').addEventListener('change', wrap(renderSlots));
+    document.getElementById('bk_table').addEventListener('change', wrap(renderSlots));
+    document.getElementById('rc_btn').addEventListener('click', wrap(recharge));
+
+    (async () => { try {
+      const now = new Date();
+      const yyyy = now.getFullYear(); const mm = String(now.getMonth()+1).padStart(2,'0'); const dd = String(now.getDate()).padStart(2,'0');
+      document.getElementById('bk_date').value = `${yyyy}-${mm}-${dd}`;
+      await loadTables();
+      await renderSlots();
+      await loadMyBookings();
+    } catch (e) { showErr(e); } })();
+  </script>
+
+  
+</body>
+</html>
+    async function pingDb() { try { await getDoc(doc(db,'__healthcheck__','ping')); } catch (e) { showErr(e); } }
+    pingDb();

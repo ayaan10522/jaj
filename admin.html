@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin Panel</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="grid">
+    <nav class="nav">
+      <div class="brand"><div class="brand-badge"></div> Arena Admin</div>
+      <div class="tabs" id="adminTabs">
+        <button class="tab" data-section="sec_dashboard">Dashboard</button>
+        <button class="tab" data-section="sec_tables">Tables</button>
+        <button class="tab" data-section="sec_slots">Slots</button>
+        <button class="tab" data-section="sec_codes">Codes</button>
+        <button class="tab" data-section="sec_bookings">Today</button>
+        <button class="tab" data-section="sec_wallet">Wallet</button>
+        <button class="tab" data-section="sec_tx">Transactions</button>
+        <button class="tab" data-section="sec_maint">Maintenance</button>
+        <button class="tab" data-section="sec_slotlist">Slot List</button>
+        <button class="tab" data-section="sec_players">Players</button>
+        <button class="tab" data-section="sec_calendar">Calendar</button>
+        <a class="tab" href="./player.html">Player</a>
+      </div>
+    </nav>
+
+    <main class="container">
+      <div id="globalMsg" class="notice error" style="display:none; margin-bottom:12px;"></div>
+      <section class="card" id="sec_dashboard">
+        <div class="card-header">
+          <div class="title">Analytics</div>
+          <div class="subtitle">Overview</div>
+        </div>
+        <div class="content">
+          <div class="grid-3">
+            <div class="card"><div class="content"><div class="title">Players</div><div class="subtitle" id="an_players">0</div></div></div>
+            <div class="card"><div class="content"><div class="title">Tables</div><div class="subtitle" id="an_tables">0</div></div></div>
+            <div class="card"><div class="content"><div class="title">Bookings Today</div><div class="subtitle" id="an_bookings">0</div></div></div>
+          </div>
+          <div class="grid-3" style="margin-top:24px;">
+            <div class="card"><div class="content"><div class="title">Revenue Today</div><div class="subtitle" id="an_rev">₹0</div></div></div>
+            <div class="card"><div class="content"><div class="title">Codes Used</div><div class="subtitle" id="an_codes">0/0</div></div></div>
+            <div class="card"><div class="content"><div class="title">Day Block</div><div class="subtitle" id="an_day">None</div></div></div>
+          </div>
+        </div>
+      </section>
+
+      <div class="grid-2" id="sec_tables" style="display:none;">
+        <section class="card">
+          <div class="card-header">
+            <div class="title">Manage Tables</div>
+            <div class="subtitle">Add, edit, delete</div>
+          </div>
+          <div class="content">
+            <div class="row" style="margin-bottom:12px;">
+              <input class="input" id="t_name" placeholder="Table name">
+              <input class="input" id="t_price" placeholder="Price per slot (₹)">
+            </div>
+            <div class="row" style="margin-bottom:12px;">
+              <input class="input" id="t_capacity" placeholder="Capacity">
+              <button class="btn" id="t_add">Save Table</button>
+            </div>
+            <div id="t_list"></div>
+          </div>
+        </section>
+
+      </div>
+
+      <section class="card" style="margin-top:24px; display:none;" id="sec_codes">
+        <div class="card-header">
+          <div class="title">Generate Recharge Codes</div>
+          <div class="subtitle">Create and share</div>
+        </div>
+        <div class="content">
+          <div class="row" style="margin-bottom:12px;">
+            <input class="input" id="rc_val" placeholder="Value (₹50 / 100 / 200)">
+            <input class="input" id="rc_for" placeholder="For username">
+            <button class="btn" id="rc_gen">Generate</button>
+          </div>
+          <div id="rc_list"></div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:24px; display:none;" id="sec_slots">
+        <div class="card-header">
+          <div class="title">Configure Slots</div>
+          <div class="subtitle">Per table</div>
+        </div>
+        <div class="content">
+          <div class="row" style="margin-bottom:12px;">
+            <select class="input" id="slot_table"></select>
+            <input class="input" id="slot_value" placeholder="HH:MM-HH:MM">
+            <button class="btn" id="slot_add">Add Slot</button>
+          </div>
+          <div id="slot_list"></div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:24px; display:none;" id="sec_slotlist">
+        <div class="card-header">
+          <div class="title">Slot List</div>
+          <div class="subtitle">With players</div>
+        </div>
+        <div class="content">
+          <div class="row" style="margin-bottom:12px;">
+            <input type="date" class="input" id="sl_date">
+            <select class="input" id="sl_table"></select>
+          </div>
+          <table class="table" id="sl_table_view">
+            <thead>
+              <tr>
+                <th>Slot</th>
+                <th>Username</th>
+                <th>Name</th>
+                <th>Seats</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:24px; display:none;" id="sec_players">
+        <div class="card-header">
+          <div class="title">Players</div>
+          <div class="subtitle">List and edit</div>
+        </div>
+        <div class="content">
+          <div class="row" style="margin-bottom:12px;">
+            <input class="input" id="pl_search" placeholder="Search players">
+          </div>
+          <table class="table" id="pl_table">
+            <thead>
+              <tr>
+                <th>Username</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Wallet</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+
+          <div id="pl_edit" style="margin-top:16px; display:none;">
+            <div class="row" style="margin-bottom:12px;">
+              <input class="input" id="pl_name" placeholder="Name">
+              <input class="input" id="pl_age" placeholder="Age">
+            </div>
+            <div class="row" style="margin-bottom:12px;">
+              <input class="input" id="pl_email" placeholder="Email">
+              <input class="input" id="pl_phone" placeholder="Phone">
+            </div>
+            <div class="row" style="margin-bottom:12px;">
+              <input class="input" id="pl_wallet" placeholder="Wallet">
+              <input class="input" id="pl_reason" placeholder="Reason (if wallet change)">
+            </div>
+            <div class="row" style="margin-bottom:12px;">
+              <button class="btn" id="pl_save">Save</button>
+              <button class="btn secondary" id="pl_cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:24px; display:none;" id="sec_bookings">
+        <div class="card-header">
+          <div class="title">Today's Bookings</div>
+          <div class="subtitle">Overview</div>
+        </div>
+        <div class="content" id="bk_today"></div>
+      </section>
+
+      <section class="card" style="margin-top:24px; display:none;" id="sec_wallet">
+        <div class="card-header">
+          <div class="title">Wallet Adjustments</div>
+          <div class="subtitle">Add or cut money</div>
+        </div>
+        <div class="content">
+          <div class="row" style="margin-bottom:12px;">
+            <input class="input" id="wa_search" placeholder="Search user">
+            <select class="input" id="wa_select"></select>
+          </div>
+          <div class="row" style="margin-bottom:12px;">
+            <input class="input" id="wa_amount" placeholder="Amount (e.g. 100 or -50)">
+            <input class="input" id="wa_reason" placeholder="Reason">
+          </div>
+          <div class="row" style="margin-bottom:12px;">
+            <button class="btn" id="wa_apply">Apply</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" style="margin-top:24px; display:none;" id="sec_tx">
+        <div class="card-header">
+          <div class="title">Transactions</div>
+          <div class="subtitle">Full history</div>
+        </div>
+        <div class="content" id="tx_list"></div>
+      </section>
+
+      <section class="card" style="margin-top:24px; display:none;" id="sec_maint">
+        <div class="card-header">
+          <div class="title">Maintenance Blocks</div>
+          <div class="subtitle">Block slots</div>
+        </div>
+        <div class="content">
+          <div class="row" style="margin-bottom:12px;">
+            <input type="date" class="input" id="mb_date">
+            <select class="input" id="mb_table"></select>
+          </div>
+          <div class="row" style="margin-bottom:12px;">
+            <input class="input" id="mb_from" placeholder="From (e.g. 14:00)">
+            <input class="input" id="mb_to" placeholder="To (e.g. 15:00)">
+          </div>
+          <button class="btn" id="mb_btn">Block</button>
+          <div id="mb_msg" class="notice" style="display:none; margin-top:12px;"></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">Admin oversights</footer>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
+    import { initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, query, where, orderBy, limit, enableNetwork } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
+
+    const cfg = {
+      apiKey: "AIzaSyC82WNipslgbxCObtoSs9a9o32LfMKQ7lo",
+  authDomain: "wrwork.firebaseapp.com",
+  databaseURL: "https://wrwork-default-rtdb.firebaseio.com",
+  projectId: "wrwork",
+  storageBucket: "wrwork.firebasestorage.app",
+  messagingSenderId: "879424926024",
+  appId: "1:879424926024:web:c07d7fc5bb2aca9dca437d",
+  measurementId: "G-J0744QC9T9"
+    };
+    const app = initializeApp(cfg);
+    const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
+    async function ensureNetwork() {
+      if (!navigator.onLine) return showErr('You appear to be offline');
+      try { await enableNetwork(db); } catch (e) { showErr(e); }
+    }
+    window.addEventListener('online', ensureNetwork);
+    window.addEventListener('offline', () => showErr('You appear to be offline'));
+    ensureNetwork();
+    if (location.protocol === 'file:') showErr('Open these pages via a local server (http://localhost) instead of file://');
+    async function pingDb() { try { await getDoc(doc(db,'__healthcheck__','ping')); } catch (e) { showErr(e); } }
+    pingDb();
+
+    function el(id) { return document.getElementById(id); }
+    function msg(elm, text, ok=false) { elm.style.display='block'; elm.className='notice ' + (ok?'ok':'error'); elm.textContent=text; }
+    function showErr(err) { const m = el('globalMsg'); if (!m) return; const t = (err && err.message) ? err.message : String(err); m.style.display='block'; m.textContent = 'Error: ' + t; }
+    window.addEventListener('unhandledrejection', e => showErr(e.reason || e));
+    window.addEventListener('error', e => showErr(e.error || e.message));
+    function wrap(fn) { return async (...args) => { try { return await fn(...args); } catch (e) { showErr(e); } } }
+
+    function showSection(id) {
+      const ids = ['sec_dashboard','sec_tables','sec_slots','sec_codes','sec_bookings','sec_wallet','sec_tx','sec_maint','sec_slotlist','sec_players','sec_calendar'];
+      for (const sid of ids) { const node = el(sid); if (node) node.style.display = sid === id ? '' : 'none'; }
+      const tabs = document.querySelectorAll('#adminTabs .tab');
+      tabs.forEach(t => t.classList.toggle('active', t.getAttribute('data-section') === id));
+    }
+    document.querySelectorAll('#adminTabs .tab').forEach(b => {
+      const sid = b.getAttribute('data-section'); if (!sid) return;
+      b.addEventListener('click', ()=> showSection(sid));
+    });
+
+    async function loadTables() {
+      const qs = await getDocs(collection(db, 'tables'));
+      const arr = []; qs.forEach(s => arr.push({ id: s.id, ...s.data() }));
+      const list = el('t_list'); list.innerHTML='';
+      for (const t of arr) {
+        const row = document.createElement('div');
+        row.className = 'notice';
+        row.textContent = `${t.name || t.id} • ₹${t.pricePerSlot || 0} • cap ${t.capacity || 0}`;
+        const del = document.createElement('button'); del.className='btn danger'; del.textContent='Delete';
+        del.style.marginLeft='12px';
+        del.addEventListener('click', async ()=>{ await deleteDoc(doc(db,'tables',t.id)); await loadTables(); });
+        row.appendChild(del);
+        list.appendChild(row);
+      }
+      const sel = el('mb_table'); sel.innerHTML='';
+      for (const t of arr) { const o=document.createElement('option'); o.value=t.id; o.textContent=t.name||t.id; sel.appendChild(o); }
+
+      const ssel = el('slot_table'); ssel.innerHTML='';
+      for (const t of arr) { const o=document.createElement('option'); o.value=t.id; o.textContent=t.name||t.id; ssel.appendChild(o); }
+      await renderSlotsAdmin();
+
+      const slSel = el('sl_table'); slSel.innerHTML='';
+      for (const t of arr) { const o=document.createElement('option'); o.value=t.id; o.textContent=t.name||t.id; slSel.appendChild(o); }
+    }
+
+    async function saveTable() {
+      const name = el('t_name').value.trim();
+      const price = parseInt(el('t_price').value.trim() || '0', 10);
+      const cap = parseInt(el('t_capacity').value.trim() || '0', 10);
+      if (!name) return;
+      await setDoc(doc(db, 'tables', name.toLowerCase().replace(/\s+/g,'_')), { name, pricePerSlot: price, capacity: cap });
+      el('t_name').value=''; el('t_price').value=''; el('t_capacity').value='';
+      await loadTables();
+    }
+
+    function genCode() {
+      const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let s='';
+      for (let i=0;i<8;i++) s += alphabet[Math.floor(Math.random()*alphabet.length)];
+      return s.slice(0,4)+'-'+s.slice(4);
+    }
+
+    async function createRecharge() {
+      const v = parseInt(el('rc_val').value.trim() || '0', 10);
+      const forUser = el('rc_for').value.trim().toLowerCase();
+      if (!v || v < 1 || !forUser) return;
+      const code = genCode();
+      await setDoc(doc(db, 'rechargeCodes', code), { value: v, isUsed: false, createdAt: Date.now(), forUser });
+      el('rc_val').value=''; el('rc_for').value='';
+      await listCodes();
+    }
+
+    async function listCodes() {
+      const qs = await getDocs(collection(db, 'rechargeCodes'));
+      const list = el('rc_list'); list.innerHTML='';
+      const arr = []; qs.forEach(s => arr.push({ id: s.id, ...s.data() }));
+      arr.sort((a,b)=>b.createdAt-a.createdAt);
+      for (const c of arr.slice(0,20)) {
+        const row = document.createElement('div'); row.className='notice';
+        row.textContent = `${c.id} • ₹${c.value} • ${c.isUsed?'Used':'Unused'} • for ${c.forUser || '-'} • claimed ${c.usedBy || '-'}`;
+        list.appendChild(row);
+      }
+    }
+
+    async function renderSlotsAdmin() {
+      const tableId = el('slot_table').value;
+      if (!tableId) return;
+      const snap = await getDoc(doc(db,'tables',tableId));
+      const slots = (snap.exists() && snap.data().slots) || [];
+      const list = el('slot_list'); list.innerHTML='';
+      if (!slots.length) { const div=document.createElement('div'); div.className='notice'; div.textContent='No slots configured'; list.appendChild(div); return; }
+      for (const s of slots) {
+        const row = document.createElement('div'); row.className='notice'; row.textContent=s;
+        const del = document.createElement('button'); del.className='btn secondary'; del.textContent='Delete'; del.style.marginLeft='12px';
+        del.addEventListener('click', async ()=>{
+          const data = snap.data(); const arr = (data.slots||[]).filter(x=>x!==s);
+          await updateDoc(doc(db,'tables',tableId), { slots: arr });
+          await renderSlotsAdmin();
+        });
+        list.appendChild(row);
+      }
+    }
+
+    async function addSlot() {
+      const tableId = el('slot_table').value; const slot = el('slot_value').value.trim();
+      if (!tableId || !slot) return;
+      const snap = await getDoc(doc(db,'tables',tableId));
+      const data = snap.exists()?snap.data():{};
+      const arr = data.slots || [];
+      if (!arr.includes(slot)) arr.push(slot);
+      await updateDoc(doc(db,'tables',tableId), { slots: arr });
+      el('slot_value').value='';
+      await renderSlotsAdmin();
+    }
+
+    async function todayBookings() {
+      const now = new Date(); const yyyy=now.getFullYear(); const mm=String(now.getMonth()+1).padStart(2,'0'); const dd=String(now.getDate()).padStart(2,'0');
+      const tdate = `${yyyy}-${mm}-${dd}`;
+      const qs = await getDocs(query(collection(db,'bookings'), where('date','==',tdate)));
+      const byTable = {};
+      qs.forEach(s=>{ const d={ id: s.id, ...s.data() }; (byTable[d.tableId] ||= []).push(d); });
+      const out = el('bk_today'); out.innerHTML='';
+      const tables = Object.keys(byTable).sort();
+      for (const tid of tables) {
+        const header = document.createElement('div'); header.className='title'; header.style.margin='8px 0'; header.textContent = tid;
+        out.appendChild(header);
+        for (const b of byTable[tid]) {
+          const row = document.createElement('div'); row.className='notice';
+          row.textContent = `${b.slot} • ${b.playerUsername} • seats ${b.seats || 1}`;
+          const cancel = document.createElement('button'); cancel.className='btn secondary'; cancel.textContent='Cancel'; cancel.style.marginLeft='12px';
+          cancel.addEventListener('click', async ()=>{
+            await deleteDoc(doc(db,'bookings', b.id || `${b.date}_${tid}_${b.slot}`));
+            await todayBookings();
+          });
+          row.appendChild(cancel);
+          out.appendChild(row);
+        }
+      }
+      if (!tables.length) { const div=document.createElement('div'); div.className='notice'; div.textContent='No bookings yet'; out.appendChild(div); }
+    }
+
+    async function blockMaintenance() {
+      const date = el('mb_date').value; const tableId = el('mb_table').value; const from = el('mb_from').value; const to = el('mb_to').value;
+      const msgEl = el('mb_msg');
+      if (!date || !tableId || !from || !to) return msg(msgEl,'Fill all fields');
+      const id = `${date}_${tableId}_${from}_${to}`;
+      await setDoc(doc(db,'maintenanceBlocks', id), { date, tableId, from, to, createdAt: Date.now() });
+      msg(msgEl,'Blocked', true);
+    }
+
+    document.getElementById('t_add').addEventListener('click', wrap(saveTable));
+    document.getElementById('rc_gen').addEventListener('click', wrap(createRecharge));
+    document.getElementById('slot_add').addEventListener('click', wrap(addSlot));
+    document.getElementById('slot_table').addEventListener('change', wrap(renderSlotsAdmin));
+    document.getElementById('mb_btn').addEventListener('click', wrap(blockMaintenance));
+
+    async function blockDay() {
+      const date = el('cb_date').value; const reason = el('cb_reason').value.trim(); const m = el('cb_msg');
+      if (!date) return msg(m,'Pick a date');
+      await setDoc(doc(db,'dayBlocks',date), { noTT: true, reason, createdAt: Date.now() });
+      msg(m,'Day blocked', true);
+    }
+    async function unblockDay() {
+      const date = el('cb_date').value; const m = el('cb_msg');
+      if (!date) return msg(m,'Pick a date');
+      await deleteDoc(doc(db,'dayBlocks',date));
+      msg(m,'Day unblocked', true);
+    }
+    const cbBlock = el('cb_block'); if (cbBlock) cbBlock.addEventListener('click', blockDay);
+    const cbUnblock = el('cb_unblock'); if (cbUnblock) cbUnblock.addEventListener('click', unblockDay);
+
+    let players = [];
+    async function loadPlayers() {
+      const qs = await getDocs(collection(db,'players'));
+      players = []; qs.forEach(s=> players.push({ id: s.id, ...s.data() }));
+      renderPlayerSelect();
+    }
+    function renderPlayerSelect(filter='') {
+      const sel = el('wa_select'); sel.innerHTML='';
+      const f = filter.trim().toLowerCase();
+      const arr = players.filter(p => !f || p.username.includes(f) || (p.name||'').toLowerCase().includes(f));
+      arr.sort((a,b)=> (a.username||a.id).localeCompare(b.username||b.id));
+      for (const p of arr) { const o=document.createElement('option'); o.value=p.username||p.id; o.textContent=`${p.username||p.id} • ${p.name||''}`; sel.appendChild(o); }
+    }
+    el('wa_search').addEventListener('input', e => renderPlayerSelect(e.target.value));
+
+    async function applyWallet() {
+      const user = el('wa_select').value.trim().toLowerCase();
+      const amt = parseInt(el('wa_amount').value.trim() || '0', 10);
+      const reason = el('wa_reason').value.trim();
+      if (!user || !amt) return;
+      const ps = await getDoc(doc(db,'players',user)); if (!ps.exists()) return;
+      const cur = ps.data().wallet || 0;
+      await updateDoc(doc(db,'players',user), { wallet: cur + amt });
+      await addDoc(collection(db,'transactions'), { type:'admin_adjust', username:user, amount:amt, reason, createdAt: Date.now() });
+      el('wa_amount').value=''; el('wa_reason').value='';
+      await listTx();
+    }
+    document.getElementById('wa_apply').addEventListener('click', wrap(applyWallet));
+
+    let editUser = null;
+    function renderPlayersTable(filter='') {
+      const tbody = el('pl_table').querySelector('tbody');
+      tbody.innerHTML='';
+      const f = filter.trim().toLowerCase();
+      const arr = players.filter(p => !f || p.username.includes(f) || (p.name||'').toLowerCase().includes(f));
+      arr.sort((a,b)=> (a.username||a.id).localeCompare(b.username||b.id));
+      for (const p of arr) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${p.username||p.id}</td><td>${p.name||''}</td><td>${p.email||''}</td><td>${p.phone||''}</td><td>₹${p.wallet||0}</td><td></td>`;
+        const btn = document.createElement('button'); btn.className='btn'; btn.textContent='Edit';
+        btn.addEventListener('click', ()=> selectPlayer(p));
+        const del = document.createElement('button'); del.className='btn danger'; del.textContent='Delete'; del.style.marginLeft='8px';
+        del.addEventListener('click', ()=> deletePlayer(p.username||p.id));
+        const cell = tr.lastChild; cell.appendChild(btn); cell.appendChild(del);
+        tbody.appendChild(tr);
+      }
+    }
+    function selectPlayer(p) {
+      editUser = p.username || p.id;
+      el('pl_edit').style.display='';
+      el('pl_name').value = p.name || '';
+      el('pl_age').value = p.age || '';
+      el('pl_email').value = p.email || '';
+      el('pl_phone').value = p.phone || '';
+      el('pl_wallet').value = String(p.wallet || 0);
+    }
+    el('pl_cancel').addEventListener('click', ()=> { el('pl_edit').style.display='none'; editUser=null; });
+    el('pl_search').addEventListener('input', e => renderPlayersTable(e.target.value));
+    async function savePlayer() {
+      if (!editUser) return;
+      const snap = await getDoc(doc(db,'players',editUser)); if (!snap.exists()) return;
+      const d = snap.data();
+      const newWallet = parseInt(el('pl_wallet').value.trim() || String(d.wallet||0), 10);
+      const diff = (newWallet - (d.wallet||0)) || 0;
+      await updateDoc(doc(db,'players',editUser), {
+        name: el('pl_name').value.trim(),
+        age: el('pl_age').value.trim() || null,
+        email: el('pl_email').value.trim(),
+        phone: el('pl_phone').value.trim(),
+        wallet: newWallet
+      });
+      if (diff) { await addDoc(collection(db,'transactions'), { type:'admin_edit_wallet', username: editUser, amount: diff, reason: el('pl_reason').value.trim(), createdAt: Date.now() }); }
+      el('pl_edit').style.display='none'; editUser=null; el('pl_reason').value='';
+      await loadPlayers(); renderPlayersTable(); await listTx();
+    }
+    document.getElementById('pl_save').addEventListener('click', wrap(savePlayer));
+
+    async function deletePlayer(username) {
+      const ok = window.confirm(`Delete player ${username}?`);
+      if (!ok) return;
+      await deleteDoc(doc(db,'players',username));
+      await loadPlayers(); renderPlayersTable();
+    }
+
+    async function listTx() {
+      const out = el('tx_list'); out.innerHTML='';
+      const qs = await getDocs(query(collection(db,'transactions'), orderBy('createdAt','desc')));
+      const table = document.createElement('table'); table.className='table';
+      table.innerHTML = `<thead><tr><th>Type</th><th>User</th><th>Amount</th><th>Details</th><th>Time</th></tr></thead><tbody></tbody>`;
+      const tbody = table.querySelector('tbody');
+      qs.forEach(s=>{ const d=s.data(); const tr=document.createElement('tr'); tr.innerHTML = `<td>${d.type}</td><td>${d.username||''}</td><td>₹${d.amount||0}</td><td>${d.reason||d.code||''}</td><td>${new Date(d.createdAt||Date.now()).toLocaleString()}</td>`; tbody.appendChild(tr); });
+      out.appendChild(table);
+    }
+
+    const now = new Date(); const yyyy=now.getFullYear(); const mm=String(now.getMonth()+1).padStart(2,'0'); const dd=String(now.getDate()).padStart(2,'0');
+    document.getElementById('mb_date').value = `${yyyy}-${mm}-${dd}`;
+    document.getElementById('sl_date').value = `${yyyy}-${mm}-${dd}`;
+
+    (async () => { try {
+      await loadTables();
+      await loadPlayers();
+      renderPlayersTable();
+      await listCodes();
+      await todayBookings();
+      await listTx();
+      await loadAnalytics();
+      showSection('sec_dashboard');
+      await slotList();
+    } catch (e) { showErr(e); } })();
+  </script>
+</body>
+</html>
+    async function loadAnalytics() {
+      const playersSnap = await getDocs(collection(db,'players'));
+      const tablesSnap = await getDocs(collection(db,'tables'));
+      const now = new Date(); const yyyy=now.getFullYear(); const mm=String(now.getMonth()+1).padStart(2,'0'); const dd=String(now.getDate()).padStart(2,'0'); const tdate=`${yyyy}-${mm}-${dd}`;
+      const bookingsSnap = await getDocs(query(collection(db,'bookings'), where('date','==',tdate)));
+      const txSnap = await getDocs(query(collection(db,'transactions')));
+      let rev = 0; txSnap.forEach(s=>{ const d=s.data(); if (d.type==='booking' && d.createdAt) { const dt = new Date(d.createdAt); const ds = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; if (ds===tdate) rev += (d.amount||0); } });
+      const codesSnap = await getDocs(collection(db,'rechargeCodes')); let used=0; let total=0; codesSnap.forEach(s=>{ const d=s.data(); total++; if (d.isUsed) used++; });
+      const dayBlock = await getDoc(doc(db,'dayBlocks',tdate));
+      el('an_players').textContent = String(playersSnap.size);
+      el('an_tables').textContent = String(tablesSnap.size);
+      el('an_bookings').textContent = String(bookingsSnap.size);
+      el('an_rev').textContent = `₹${Math.abs(rev)}`;
+      el('an_codes').textContent = `${used}/${total}`;
+      el('an_day').textContent = dayBlock.exists()? `Blocked • ${dayBlock.data().reason||''}` : 'None';
+    }
