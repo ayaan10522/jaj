@@ -79,7 +79,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
-    import { initializeFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, addDoc, enableNetwork } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
+    import { getDatabase, ref, get, set, update, push, onValue } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-database.js";
 
     const cfg = {
       apiKey: "AIzaSyC82WNipslgbxCObtoSs9a9o32LfMKQ7lo",
@@ -92,15 +92,9 @@
   measurementId: "G-J0744QC9T9"
     };
     const app = initializeApp(cfg);
-    const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
-    async function ensureNetwork() {
-      if (!navigator.onLine) return showErr('You appear to be offline');
-      try { await enableNetwork(db); } catch (e) { showErr(e); }
-    }
-    window.addEventListener('online', ensureNetwork);
+    const db = getDatabase(app);
     window.addEventListener('offline', () => showErr('You appear to be offline'));
-    ensureNetwork();
-    if (location.protocol === 'file:') showErr('Open these pages via a local server (http://localhost) instead of file://');
+    
 
     function msg(el, text, ok = false) {
       el.style.display = 'block';
@@ -110,20 +104,27 @@
     function showErr(err) {
       const m = document.getElementById('globalMsg'); if (!m) return;
       const msg = (err && err.message) ? err.message : String(err);
-      const code = err && (err.code || err.name) ? ` (${err.code || err.name})` : '';
-      m.style.display='block'; m.textContent = 'Error: ' + msg + code;
+      m.style.display='block'; m.textContent = 'Error: ' + msg;
     }
     window.addEventListener('unhandledrejection', e => showErr(e.reason || e));
     window.addEventListener('error', e => showErr(e.error || e.message));
     function wrap(fn) { return async (...args) => { try { return await fn(...args); } catch (e) { showErr(e); } } }
+
+    function isOffline(e) { const s = String(e && e.message || ''); return s.toLowerCase().includes('offline') || (e && e.code === 'unavailable'); }
+    function lsRead(k) { try { return JSON.parse(localStorage.getItem(k) || '{}'); } catch(_) { return {}; } }
+    function lsWrite(k,v) { localStorage.setItem(k, JSON.stringify(v)); }
+    function lsGetDoc(coll,id) { const db = lsRead('ls_'+coll); return db[id] || null; }
+    function lsSetDoc(coll,id,data) { const db = lsRead('ls_'+coll); db[id]=data; lsWrite('ls_'+coll, db); }
+    function lsAll(coll) { const db = lsRead('ls_'+coll); return Object.entries(db).map(([id,d])=>({id, ...d})); }
 
     const player = JSON.parse(localStorage.getItem('player') || '{}');
     if (!player.username) window.location.href = './player.html';
     document.getElementById('walletBadge').textContent = `Wallet: ₹${player.wallet ?? 0}`;
 
     async function refreshWallet() {
-      const snap = await getDoc(doc(db, 'players', player.username));
-      const d = snap.data();
+      let d;
+      try { const snap = await get(ref(db, 'players/' + player.username)); d = snap.val() || {}; }
+      catch(e){ if (isOffline(e)) { d = lsGetDoc('players', player.username) || {}; } else throw e; }
       player.wallet = d.wallet || 0;
       localStorage.setItem('player', JSON.stringify(player));
       document.getElementById('walletBadge').textContent = `Wallet: ₹${player.wallet}`;
@@ -133,9 +134,9 @@
     async function loadTables() {
       const sel = document.getElementById('bk_table');
       sel.innerHTML = '';
-      const qs = await getDocs(collection(db, 'tables'));
-      const arr = [];
-      qs.forEach(s => arr.push({ id: s.id, ...s.data() }));
+      let arr = [];
+      try { const snap = await get(ref(db, 'tables')); const val = snap.val() || {}; arr = Object.entries(val).map(([id,d])=>({id, ...d})); }
+      catch(e){ if (isOffline(e)) { arr = lsAll('tables'); } else throw e; }
       arr.sort((a,b) => (a.name||a.id).localeCompare(b.name||b.id));
       tablesCache = {};
       for (const t of arr) {
@@ -158,20 +159,17 @@
       const wrap = document.getElementById('slots');
       wrap.innerHTML = '';
       if (!date || !tableId) return;
-      const daySnap = await getDoc(doc(db,'dayBlocks',date));
-      const dayData = daySnap.exists() ? daySnap.data() : null;
+      let dayData = null; try { const daySnap = await get(ref(db,'dayBlocks/' + date)); dayData = daySnap.exists()?daySnap.val():null; } catch(e){ if (isOffline(e)) { const ld = lsGetDoc('dayBlocks', date); dayData = ld ? ld : null; } else throw e; }
       const banner = document.getElementById('dayBanner');
       if (dayData && dayData.noTT) { banner.style.display='block'; banner.textContent = `No TT today • ${dayData.reason || ''}`; } else { banner.style.display='none'; banner.textContent=''; }
-      const tableSnap = await getDoc(doc(db,'tables',tableId));
-      const table = tableSnap.exists()?tableSnap.data():{};
-      const slots = table.slots || [];
+      let table = {}; try { const tableSnap = await get(ref(db,'tables/' + tableId)); table = tableSnap.exists()?tableSnap.val():{}; } catch(e){ if (isOffline(e)) { table = lsGetDoc('tables', tableId) || {}; } else throw e; }
+      let slots = table.slots || [];
+      if (!Array.isArray(slots)) { slots = Object.values(slots || {}); }
+      const uniqueSlots = Array.from(new Set(slots));
       if (!slots.length) { const div=document.createElement('div'); div.className='notice'; div.textContent='No slots configured by admin'; wrap.appendChild(div); return; }
-      const qs = await getDocs(query(collection(db, 'bookings'), where('date','==',date), where('tableId','==',tableId)));
-      const used = {};
-      qs.forEach(s => { const d = s.data(); used[d.slot] = (used[d.slot]||0) + (d.seats||1); });
-      const mbs = await getDocs(query(collection(db,'maintenanceBlocks'), where('date','==',date), where('tableId','==',tableId)));
-      const blockedRanges = []; mbs.forEach(s=>blockedRanges.push(s.data()));
-      for (const s of slots) {
+      let used = {}; try { const bsnap = await get(ref(db,'bookings')); const bval = bsnap.val() || {}; Object.values(bval).forEach(d=>{ if (d.date===date && d.tableId===tableId) { used[d.slot] = (used[d.slot]||0) + (d.seats||1); } }); } catch(e){ if (isOffline(e)) { const all = lsAll('bookings').filter(b=>b.date===date && b.tableId===tableId); for (const d of all) { used[d.slot] = (used[d.slot]||0) + (d.seats||1); } } else throw e; }
+      let blockedRanges = []; try { const msnap = await get(ref(db,'maintenanceBlocks')); const mval = msnap.val() || {}; blockedRanges = Object.values(mval).filter(b=>b.date===date && b.tableId===tableId); } catch(e){ if (isOffline(e)) { blockedRanges = lsAll('maintenanceBlocks').filter(b=>b.date===date && b.tableId===tableId); } else throw e; }
+      for (const s of uniqueSlots) {
         const div = document.createElement('div');
         const cap = table.capacity || 0;
         const u = used[s] || 0;
@@ -194,15 +192,16 @@
       const code = document.getElementById('rc_code').value.trim().toUpperCase();
       const m = document.getElementById('rcMsg');
       if (!code) return msg(m, 'Enter a code');
-      const snap = await getDoc(doc(db, 'rechargeCodes', code));
-      if (!snap.exists()) return msg(m, 'Invalid code');
-      const d = snap.data();
+      let d; try { const snap = await get(ref(db, 'rechargeCodes/' + code)); if (!snap.exists()) return msg(m, 'Invalid code'); d = snap.val(); }
+      catch(e){ if (isOffline(e)) { const loc = lsGetDoc('rechargeCodes', code); if (!loc) return msg(m,'Invalid code'); d = loc; } else throw e; }
       if (d.isUsed) return msg(m, 'Code already used');
       if (d.forUser && d.forUser !== player.username) return msg(m, 'Code not assigned to you');
       const value = d.value || 0;
-      await updateDoc(doc(db, 'players', player.username), { wallet: (player.wallet || 0) + value });
-      await updateDoc(doc(db, 'rechargeCodes', code), { isUsed: true, usedBy: player.username, usedAt: Date.now() });
-      await addDoc(collection(db,'transactions'), { type:'recharge', code, username: player.username, amount: value, createdAt: Date.now() });
+      try {
+        await update(ref(db, 'players/' + player.username), { wallet: (player.wallet || 0) + value });
+        await update(ref(db, 'rechargeCodes/' + code), { isUsed: true, usedBy: player.username, usedAt: Date.now() });
+        await push(ref(db,'transactions'), { type:'recharge', code, username: player.username, amount: value, createdAt: Date.now() });
+      } catch(e){ if (isOffline(e)) { const p = lsGetDoc('players', player.username) || { wallet: 0, username: player.username }; p.wallet = (p.wallet||0) + value; lsSetDoc('players', player.username, p); const rc = lsGetDoc('rechargeCodes', code) || {}; rc.isUsed = true; rc.usedBy = player.username; rc.usedAt = Date.now(); lsSetDoc('rechargeCodes', code, rc); const txid = 'tx_'+Date.now(); lsSetDoc('transactions', txid, { type:'recharge', code, username: player.username, amount: value, createdAt: Date.now() }); } else throw e; }
       await refreshWallet();
       msg(m, `Added ₹${value} to wallet`, true);
       document.getElementById('rc_code').value = '';
@@ -227,9 +226,11 @@
       const total = price * seats;
       if ((player.wallet || 0) < total) return msg(m, 'Insufficient wallet');
       openConfirm(`Confirm booking • Table: ${table.name || tableId} • Slot: ${slot} • Seats: ${seats} • Total: ₹${total}`, async () => {
-        await addDoc(collection(db,'bookings'), { date, tableId, slot, playerUsername: player.username, seats, status: 'confirmed', createdAt: Date.now() });
-        await updateDoc(doc(db, 'players', player.username), { wallet: player.wallet - total });
-        await addDoc(collection(db,'transactions'), { type:'booking', username: player.username, amount: -total, tableId, slot, seats, createdAt: Date.now() });
+        try {
+          await push(ref(db,'bookings'), { date, tableId, slot, playerUsername: player.username, seats, status: 'confirmed', createdAt: Date.now() });
+          await update(ref(db, 'players/' + player.username), { wallet: player.wallet - total });
+          await push(ref(db,'transactions'), { type:'booking', username: player.username, amount: -total, tableId, slot, seats, createdAt: Date.now() });
+        } catch(e){ if (isOffline(e)) { const id = 'bk_'+Date.now(); lsSetDoc('bookings', id, { date, tableId, slot, playerUsername: player.username, seats, status:'confirmed', createdAt: Date.now() }); const p = lsGetDoc('players', player.username) || { wallet: player.wallet }; p.wallet = (p.wallet||0) - total; lsSetDoc('players', player.username, p); const txid='tx_'+Date.now(); lsSetDoc('transactions', txid, { type:'booking', username: player.username, amount:-total, tableId, slot, seats, createdAt: Date.now() }); } else { showErr(e); return; } }
         await refreshWallet();
         msg(m, `Your slot is confirmed for ${tableId} at ${slot}.`, true);
         await renderSlots();
@@ -245,9 +246,9 @@
       const mm = String(today.getMonth()+1).padStart(2,'0');
       const dd = String(today.getDate()).padStart(2,'0');
       const tdate = `${yyyy}-${mm}-${dd}`;
-      const qs = await getDocs(query(collection(db, 'bookings'), where('playerUsername','==',player.username)));
-      const arr = [];
-      qs.forEach(s => arr.push(s.data()));
+      let arr = [];
+      try { const bsnap = await get(ref(db,'bookings')); const bval = bsnap.val() || {}; arr = Object.values(bval).filter(b=>b.playerUsername===player.username); }
+      catch(e){ if (isOffline(e)) { arr = lsAll('bookings').filter(b=>b.playerUsername===player.username).map(b=>b); } else throw e; }
       arr.sort((a,b) => a.date.localeCompare(b.date));
       for (const b of arr) {
         const div = document.createElement('div');
@@ -271,11 +272,16 @@
       await loadTables();
       await renderSlots();
       await loadMyBookings();
+      onValue(ref(db,'players/' + player.username), async () => { await refreshWallet(); });
+      onValue(ref(db,'tables'), async () => { await loadTables(); await renderSlots(); });
+      onValue(ref(db,'bookings'), async () => { await renderSlots(); await loadMyBookings(); });
+      onValue(ref(db,'maintenanceBlocks'), async () => { await renderSlots(); });
+      onValue(ref(db,'dayBlocks'), async () => { await renderSlots(); });
     } catch (e) { showErr(e); } })();
   </script>
 
   
 </body>
 </html>
-    async function pingDb() { try { await getDoc(doc(db,'__healthcheck__','ping')); } catch (e) { showErr(e); } }
+    async function pingDb() { try { await get(ref(db,'__healthcheck__/ping')); } catch (e) { showErr(e); } }
     pingDb();

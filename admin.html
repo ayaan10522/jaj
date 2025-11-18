@@ -219,6 +219,45 @@
           <button class="btn" id="mb_btn">Block</button>
           <div id="mb_msg" class="notice" style="display:none; margin-top:12px;"></div>
         </div>
+        <div class="card" style="margin-top:24px;">
+          <div class="card-header">
+            <div class="title">Day Block (No TT)</div>
+            <div class="subtitle">Block entire day with reason</div>
+          </div>
+          <div class="content">
+            <div class="row" style="margin-bottom:12px;">
+              <input type="date" class="input" id="cb_date">
+              <input class="input" id="cb_reason" placeholder="Reason (e.g. tournament, maintenance)">
+            </div>
+            <div class="row" style="margin-bottom:12px;">
+              <button class="btn" id="cb_block">Block Day</button>
+              <button class="btn secondary" id="cb_unblock">Unblock Day</button>
+            </div>
+            <div id="cb_msg" class="notice" style="display:none; margin-top:12px;"></div>
+          </div>
+        </div>
+      </section>
+      <section class="card" style="margin-top:24px; display:none;" id="sec_calendar">
+        <div class="card-header">
+          <div class="title">Calendar</div>
+          <div class="subtitle">Monthly view</div>
+        </div>
+        <div class="content">
+          <div class="row" style="margin-bottom:12px; align-items:center; gap:12px;">
+            <button class="btn" id="cal_prev">Prev</button>
+            <div id="cal_title" class="title" style="margin:0;">Month</div>
+            <button class="btn" id="cal_next">Next</button>
+          </div>
+          <table class="table" id="cal_table">
+            <thead>
+              <tr>
+                <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <div class="subtitle" style="margin-top:8px;">Green: bookings exist • Red: day blocked</div>
+        </div>
       </section>
     </main>
 
@@ -227,7 +266,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
-    import { initializeFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc, query, where, orderBy, limit, enableNetwork } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
+    import { getDatabase, ref, get, set, update, remove, push, onValue } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-database.js";
 
     const cfg = {
       apiKey: "AIzaSyC82WNipslgbxCObtoSs9a9o32LfMKQ7lo",
@@ -240,16 +279,10 @@
   measurementId: "G-J0744QC9T9"
     };
     const app = initializeApp(cfg);
-    const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
-    async function ensureNetwork() {
-      if (!navigator.onLine) return showErr('You appear to be offline');
-      try { await enableNetwork(db); } catch (e) { showErr(e); }
-    }
-    window.addEventListener('online', ensureNetwork);
+    const db = getDatabase(app);
     window.addEventListener('offline', () => showErr('You appear to be offline'));
-    ensureNetwork();
-    if (location.protocol === 'file:') showErr('Open these pages via a local server (http://localhost) instead of file://');
-    async function pingDb() { try { await getDoc(doc(db,'__healthcheck__','ping')); } catch (e) { showErr(e); } }
+    
+    async function pingDb() { try { await get(ref(db,'__healthcheck__/ping')); } catch (e) { showErr(e); } }
     pingDb();
 
     function el(id) { return document.getElementById(id); }
@@ -271,8 +304,9 @@
     });
 
     async function loadTables() {
-      const qs = await getDocs(collection(db, 'tables'));
-      const arr = []; qs.forEach(s => arr.push({ id: s.id, ...s.data() }));
+      let arr = [];
+      try { const snap = await get(ref(db, 'tables')); const val = snap.val() || {}; arr = Object.entries(val).map(([id,d])=>({id, ...d})); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_tables')||'{}'); arr = Object.entries(dbm).map(([id,d])=>({id, ...d})); } else { throw e; } }
       const list = el('t_list'); list.innerHTML='';
       for (const t of arr) {
         const row = document.createElement('div');
@@ -280,7 +314,7 @@
         row.textContent = `${t.name || t.id} • ₹${t.pricePerSlot || 0} • cap ${t.capacity || 0}`;
         const del = document.createElement('button'); del.className='btn danger'; del.textContent='Delete';
         del.style.marginLeft='12px';
-        del.addEventListener('click', async ()=>{ await deleteDoc(doc(db,'tables',t.id)); await loadTables(); });
+        del.addEventListener('click', async ()=>{ await remove(ref(db,'tables/' + t.id)); await loadTables(); });
         row.appendChild(del);
         list.appendChild(row);
       }
@@ -300,7 +334,9 @@
       const price = parseInt(el('t_price').value.trim() || '0', 10);
       const cap = parseInt(el('t_capacity').value.trim() || '0', 10);
       if (!name) return;
-      await setDoc(doc(db, 'tables', name.toLowerCase().replace(/\s+/g,'_')), { name, pricePerSlot: price, capacity: cap });
+      const id = name.toLowerCase().replace(/\s+/g,'_');
+      try { await set(ref(db, 'tables/' + id), { name, pricePerSlot: price, capacity: cap }); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_tables')||'{}'); dbm[id] = { name, pricePerSlot: price, capacity: cap, slots: [] }; localStorage.setItem('ls_tables', JSON.stringify(dbm)); } else { throw e; } }
       el('t_name').value=''; el('t_price').value=''; el('t_capacity').value='';
       await loadTables();
     }
@@ -317,15 +353,17 @@
       const forUser = el('rc_for').value.trim().toLowerCase();
       if (!v || v < 1 || !forUser) return;
       const code = genCode();
-      await setDoc(doc(db, 'rechargeCodes', code), { value: v, isUsed: false, createdAt: Date.now(), forUser });
+      try { await set(ref(db, 'rechargeCodes/' + code), { value: v, isUsed: false, createdAt: Date.now(), forUser }); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_rechargeCodes')||'{}'); dbm[code] = { value: v, isUsed: false, createdAt: Date.now(), forUser }; localStorage.setItem('ls_rechargeCodes', JSON.stringify(dbm)); } else { throw e; } }
       el('rc_val').value=''; el('rc_for').value='';
       await listCodes();
     }
 
     async function listCodes() {
-      const qs = await getDocs(collection(db, 'rechargeCodes'));
       const list = el('rc_list'); list.innerHTML='';
-      const arr = []; qs.forEach(s => arr.push({ id: s.id, ...s.data() }));
+      let arr = [];
+      try { const snap = await get(ref(db, 'rechargeCodes')); const val = snap.val() || {}; arr = Object.entries(val).map(([id,d])=>({id, ...d})); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_rechargeCodes')||'{}'); arr = Object.entries(dbm).map(([id,d])=>({id, ...d})); } else { throw e; } }
       arr.sort((a,b)=>b.createdAt-a.createdAt);
       for (const c of arr.slice(0,20)) {
         const row = document.createElement('div'); row.className='notice';
@@ -337,16 +375,19 @@
     async function renderSlotsAdmin() {
       const tableId = el('slot_table').value;
       if (!tableId) return;
-      const snap = await getDoc(doc(db,'tables',tableId));
-      const slots = (snap.exists() && snap.data().slots) || [];
+      let slots = [];
+      try { const snap = await get(ref(db,'tables/' + tableId)); slots = (snap.exists() && (snap.val().slots || [])) || []; }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const t = JSON.parse(localStorage.getItem('ls_tables')||'{}')[tableId] || {}; slots = t.slots || []; } else { throw e; } }
+      if (!Array.isArray(slots)) { slots = Object.values(slots || {}); }
+      slots = Array.from(new Set(slots));
       const list = el('slot_list'); list.innerHTML='';
       if (!slots.length) { const div=document.createElement('div'); div.className='notice'; div.textContent='No slots configured'; list.appendChild(div); return; }
       for (const s of slots) {
         const row = document.createElement('div'); row.className='notice'; row.textContent=s;
         const del = document.createElement('button'); del.className='btn secondary'; del.textContent='Delete'; del.style.marginLeft='12px';
         del.addEventListener('click', async ()=>{
-          const data = snap.data(); const arr = (data.slots||[]).filter(x=>x!==s);
-          await updateDoc(doc(db,'tables',tableId), { slots: arr });
+          try { const snap2 = await get(ref(db,'tables/' + tableId)); const data = snap2.val(); const arr = (data.slots||[]).filter(x=>x!==s); await update(ref(db,'tables/' + tableId), { slots: arr }); }
+          catch(e){ const ss = String(e && e.message || '').toLowerCase(); if (ss.includes('offline') || (e && e.code==='unavailable')) { const t = JSON.parse(localStorage.getItem('ls_tables')||'{}'); const data = t[tableId] || {}; const arr = (data.slots||[]).filter(x=>x!==s); data.slots = arr; t[tableId]=data; localStorage.setItem('ls_tables', JSON.stringify(t)); } else { throw e; } }
           await renderSlotsAdmin();
         });
         list.appendChild(row);
@@ -356,11 +397,13 @@
     async function addSlot() {
       const tableId = el('slot_table').value; const slot = el('slot_value').value.trim();
       if (!tableId || !slot) return;
-      const snap = await getDoc(doc(db,'tables',tableId));
-      const data = snap.exists()?snap.data():{};
-      const arr = data.slots || [];
-      if (!arr.includes(slot)) arr.push(slot);
-      await updateDoc(doc(db,'tables',tableId), { slots: arr });
+      try {
+        const snap = await get(ref(db,'tables/' + tableId));
+        const data = snap.exists()?snap.val():{};
+        const arr = data.slots || [];
+        if (!arr.includes(slot)) arr.push(slot);
+        await update(ref(db,'tables/' + tableId), { slots: arr });
+      } catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const t = JSON.parse(localStorage.getItem('ls_tables')||'{}'); const data = t[tableId] || {}; const arr = data.slots || []; if (!arr.includes(slot)) arr.push(slot); data.slots = arr; t[tableId]=data; localStorage.setItem('ls_tables', JSON.stringify(t)); } else { throw e; } }
       el('slot_value').value='';
       await renderSlotsAdmin();
     }
@@ -368,9 +411,9 @@
     async function todayBookings() {
       const now = new Date(); const yyyy=now.getFullYear(); const mm=String(now.getMonth()+1).padStart(2,'0'); const dd=String(now.getDate()).padStart(2,'0');
       const tdate = `${yyyy}-${mm}-${dd}`;
-      const qs = await getDocs(query(collection(db,'bookings'), where('date','==',tdate)));
-      const byTable = {};
-      qs.forEach(s=>{ const d={ id: s.id, ...s.data() }; (byTable[d.tableId] ||= []).push(d); });
+      let byTable = {};
+      try { const snap = await get(ref(db,'bookings')); const val = snap.val() || {}; Object.entries(val).forEach(([id,d])=>{ if (d.date===tdate) { (byTable[d.tableId] ||= []).push({ id, ...d }); } }); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_bookings')||'{}'); Object.entries(dbm).forEach(([id,d])=>{ if (d.date===tdate) { (byTable[d.tableId] ||= []).push({ id, ...d }); } }); } else { throw e; } }
       const out = el('bk_today'); out.innerHTML='';
       const tables = Object.keys(byTable).sort();
       for (const tid of tables) {
@@ -381,7 +424,7 @@
           row.textContent = `${b.slot} • ${b.playerUsername} • seats ${b.seats || 1}`;
           const cancel = document.createElement('button'); cancel.className='btn secondary'; cancel.textContent='Cancel'; cancel.style.marginLeft='12px';
           cancel.addEventListener('click', async ()=>{
-            await deleteDoc(doc(db,'bookings', b.id || `${b.date}_${tid}_${b.slot}`));
+            await remove(ref(db,'bookings/' + (b.id || `${b.date}_${tid}_${b.slot}`)));
             await todayBookings();
           });
           row.appendChild(cancel);
@@ -396,7 +439,8 @@
       const msgEl = el('mb_msg');
       if (!date || !tableId || !from || !to) return msg(msgEl,'Fill all fields');
       const id = `${date}_${tableId}_${from}_${to}`;
-      await setDoc(doc(db,'maintenanceBlocks', id), { date, tableId, from, to, createdAt: Date.now() });
+      try { await set(ref(db,'maintenanceBlocks/' + id), { date, tableId, from, to, createdAt: Date.now() }); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_maintenanceBlocks')||'{}'); dbm[id] = { date, tableId, from, to, createdAt: Date.now() }; localStorage.setItem('ls_maintenanceBlocks', JSON.stringify(dbm)); } else { throw e; } }
       msg(msgEl,'Blocked', true);
     }
 
@@ -409,13 +453,13 @@
     async function blockDay() {
       const date = el('cb_date').value; const reason = el('cb_reason').value.trim(); const m = el('cb_msg');
       if (!date) return msg(m,'Pick a date');
-      await setDoc(doc(db,'dayBlocks',date), { noTT: true, reason, createdAt: Date.now() });
+      await set(ref(db,'dayBlocks/' + date), { noTT: true, reason, createdAt: Date.now() });
       msg(m,'Day blocked', true);
     }
     async function unblockDay() {
       const date = el('cb_date').value; const m = el('cb_msg');
       if (!date) return msg(m,'Pick a date');
-      await deleteDoc(doc(db,'dayBlocks',date));
+      await remove(ref(db,'dayBlocks/' + date));
       msg(m,'Day unblocked', true);
     }
     const cbBlock = el('cb_block'); if (cbBlock) cbBlock.addEventListener('click', blockDay);
@@ -423,8 +467,9 @@
 
     let players = [];
     async function loadPlayers() {
-      const qs = await getDocs(collection(db,'players'));
-      players = []; qs.forEach(s=> players.push({ id: s.id, ...s.data() }));
+      players = [];
+      try { const snap = await get(ref(db,'players')); const val = snap.val() || {}; players = Object.entries(val).map(([id,d])=>({id, ...d})); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_players')||'{}'); players = Object.entries(dbm).map(([id,d])=>({id, ...d})); } else { throw e; } }
       renderPlayerSelect();
     }
     function renderPlayerSelect(filter='') {
@@ -441,10 +486,9 @@
       const amt = parseInt(el('wa_amount').value.trim() || '0', 10);
       const reason = el('wa_reason').value.trim();
       if (!user || !amt) return;
-      const ps = await getDoc(doc(db,'players',user)); if (!ps.exists()) return;
-      const cur = ps.data().wallet || 0;
-      await updateDoc(doc(db,'players',user), { wallet: cur + amt });
-      await addDoc(collection(db,'transactions'), { type:'admin_adjust', username:user, amount:amt, reason, createdAt: Date.now() });
+      let cur = 0;
+      try { const ps = await get(ref(db,'players/' + user)); if (!ps.exists()) return; cur = (ps.val().wallet || 0); await update(ref(db,'players/' + user), { wallet: cur + amt }); await push(ref(db,'transactions'), { type:'admin_adjust', username:user, amount:amt, reason, createdAt: Date.now() }); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_players')||'{}'); const p = dbm[user] || { username:user, wallet: 0 }; p.wallet = (p.wallet||0) + amt; dbm[user]=p; localStorage.setItem('ls_players', JSON.stringify(dbm)); const txm = JSON.parse(localStorage.getItem('ls_transactions')||'{}'); txm['tx_'+Date.now()] = { type:'admin_adjust', username:user, amount:amt, reason, createdAt: Date.now() }; localStorage.setItem('ls_transactions', JSON.stringify(txm)); } else { throw e; } }
       el('wa_amount').value=''; el('wa_reason').value='';
       await listTx();
     }
@@ -481,18 +525,11 @@
     el('pl_search').addEventListener('input', e => renderPlayersTable(e.target.value));
     async function savePlayer() {
       if (!editUser) return;
-      const snap = await getDoc(doc(db,'players',editUser)); if (!snap.exists()) return;
-      const d = snap.data();
+      let d = null; try { const snap = await get(ref(db,'players/' + editUser)); if (!snap.exists()) return; d = snap.val(); } catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_players')||'{}'); d = dbm[editUser]; if (!d) return; } else { throw e; } }
       const newWallet = parseInt(el('pl_wallet').value.trim() || String(d.wallet||0), 10);
       const diff = (newWallet - (d.wallet||0)) || 0;
-      await updateDoc(doc(db,'players',editUser), {
-        name: el('pl_name').value.trim(),
-        age: el('pl_age').value.trim() || null,
-        email: el('pl_email').value.trim(),
-        phone: el('pl_phone').value.trim(),
-        wallet: newWallet
-      });
-      if (diff) { await addDoc(collection(db,'transactions'), { type:'admin_edit_wallet', username: editUser, amount: diff, reason: el('pl_reason').value.trim(), createdAt: Date.now() }); }
+      try { await update(ref(db,'players/' + editUser), { name: el('pl_name').value.trim(), age: el('pl_age').value.trim() || null, email: el('pl_email').value.trim(), phone: el('pl_phone').value.trim(), wallet: newWallet }); if (diff) { await push(ref(db,'transactions'), { type:'admin_edit_wallet', username: editUser, amount: diff, reason: el('pl_reason').value.trim(), createdAt: Date.now() }); } }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_players')||'{}'); dbm[editUser] = { ...(dbm[editUser]||{}), name: el('pl_name').value.trim(), age: el('pl_age').value.trim() || null, email: el('pl_email').value.trim(), phone: el('pl_phone').value.trim(), wallet: newWallet }; localStorage.setItem('ls_players', JSON.stringify(dbm)); if (diff) { const txm = JSON.parse(localStorage.getItem('ls_transactions')||'{}'); txm['tx_'+Date.now()] = { type:'admin_edit_wallet', username: editUser, amount: diff, reason: el('pl_reason').value.trim(), createdAt: Date.now() }; localStorage.setItem('ls_transactions', JSON.stringify(txm)); } } else { throw e; } }
       el('pl_edit').style.display='none'; editUser=null; el('pl_reason').value='';
       await loadPlayers(); renderPlayersTable(); await listTx();
     }
@@ -501,23 +538,96 @@
     async function deletePlayer(username) {
       const ok = window.confirm(`Delete player ${username}?`);
       if (!ok) return;
-      await deleteDoc(doc(db,'players',username));
+      try { await remove(ref(db,'players/' + username)); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const dbm = JSON.parse(localStorage.getItem('ls_players')||'{}'); delete dbm[username]; localStorage.setItem('ls_players', JSON.stringify(dbm)); } else { throw e; } }
       await loadPlayers(); renderPlayersTable();
     }
 
     async function listTx() {
       const out = el('tx_list'); out.innerHTML='';
-      const qs = await getDocs(query(collection(db,'transactions'), orderBy('createdAt','desc')));
+      let arr = [];
+      try { const snap = await get(ref(db,'transactions')); const val = snap.val() || {}; arr = Object.values(val); arr.sort((a,b)=> (b.createdAt||0) - (a.createdAt||0)); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { const txm = JSON.parse(localStorage.getItem('ls_transactions')||'{}'); arr = Object.values(txm); arr.sort((a,b)=> (b.createdAt||0) - (a.createdAt||0)); } else { throw e; } }
       const table = document.createElement('table'); table.className='table';
       table.innerHTML = `<thead><tr><th>Type</th><th>User</th><th>Amount</th><th>Details</th><th>Time</th></tr></thead><tbody></tbody>`;
       const tbody = table.querySelector('tbody');
-      qs.forEach(s=>{ const d=s.data(); const tr=document.createElement('tr'); tr.innerHTML = `<td>${d.type}</td><td>${d.username||''}</td><td>₹${d.amount||0}</td><td>${d.reason||d.code||''}</td><td>${new Date(d.createdAt||Date.now()).toLocaleString()}</td>`; tbody.appendChild(tr); });
+      arr.forEach(d=>{ const tr=document.createElement('tr'); tr.innerHTML = `<td>${d.type}</td><td>${d.username||''}</td><td>₹${d.amount||0}</td><td>${d.reason||d.code||''}</td><td>${new Date(d.createdAt||Date.now()).toLocaleString()}</td>`; tbody.appendChild(tr); });
       out.appendChild(table);
     }
 
     const now = new Date(); const yyyy=now.getFullYear(); const mm=String(now.getMonth()+1).padStart(2,'0'); const dd=String(now.getDate()).padStart(2,'0');
     document.getElementById('mb_date').value = `${yyyy}-${mm}-${dd}`;
     document.getElementById('sl_date').value = `${yyyy}-${mm}-${dd}`;
+    const cbDateEl = document.getElementById('cb_date'); if (cbDateEl) cbDateEl.value = `${yyyy}-${mm}-${dd}`;
+    let calYear = now.getFullYear();
+    let calMonth = now.getMonth();
+    function fmtDate(y,m,d){ const mm=String(m+1).padStart(2,'0'); const dd=String(d).padStart(2,'0'); return `${y}-${mm}-${dd}`; }
+    function monthName(m){ return ['January','February','March','April','May','June','July','August','September','October','November','December'][m]; }
+    async function renderCalendar(){
+      const title = el('cal_title'); if (title) title.textContent = `${monthName(calMonth)} ${calYear}`;
+      const table = el('cal_table'); if (!table) return; const tbody = table.querySelector('tbody'); tbody.innerHTML='';
+      const first = new Date(calYear, calMonth, 1);
+      const startDow = first.getDay();
+      const days = new Date(calYear, calMonth+1, 0).getDate();
+      let week = document.createElement('tr');
+      for (let i=0; i<startDow; i++){ const td=document.createElement('td'); td.textContent=''; week.appendChild(td); }
+      let bookingsByDay = {}; let blockedByDay = {};
+      try {
+        const bsnap = await get(ref(db,'bookings')); const bval = bsnap.val() || {};
+        Object.values(bval).forEach(b=>{
+          if (!b.date) return; const parts=b.date.split('-'); const y=Number(parts[0]); const m=Number(parts[1])-1; const d=Number(parts[2]);
+          if (y===calYear && m===calMonth){ bookingsByDay[d] = (bookingsByDay[d]||0) + 1; }
+        });
+        const dsnap = await get(ref(db,'dayBlocks')); const dval = dsnap.val() || {};
+        Object.keys(dval).forEach(id=>{ const p=id.split('-'); const y=Number(p[0]); const m=Number(p[1])-1; const d=Number(p[2]); if (y===calYear && m===calMonth){ blockedByDay[d] = true; } });
+      } catch(e) { /* ignore */ }
+      for (let day=1; day<=days; day++){
+        if (week.children.length===7){ tbody.appendChild(week); week=document.createElement('tr'); }
+        const td=document.createElement('td');
+        const dateStr = fmtDate(calYear, calMonth, day);
+        const hasBookings = !!bookingsByDay[day];
+        const isBlocked = !!blockedByDay[day];
+        td.textContent = String(day);
+        if (isBlocked) td.style.background='#ffebe9';
+        else if (hasBookings) td.style.background='#e6ffed';
+        td.title = `${dateStr}${isBlocked?' • blocked':''}${hasBookings?` • ${bookingsByDay[day]} bookings`:''}`;
+        week.appendChild(td);
+      }
+      while (week.children.length<7){ const td=document.createElement('td'); td.textContent=''; week.appendChild(td); }
+      tbody.appendChild(week);
+    }
+    function changeMonth(delta){ calMonth += delta; if (calMonth<0){ calMonth=11; calYear--; } else if (calMonth>11){ calMonth=0; calYear++; } renderCalendar(); }
+    const calPrev = el('cal_prev'); if (calPrev) calPrev.addEventListener('click', ()=> changeMonth(-1));
+    const calNext = el('cal_next'); if (calNext) calNext.addEventListener('click', ()=> changeMonth(1));
+
+    async function slotList() {
+      const date = el('sl_date').value; const tableId = el('sl_table').value; const tbody = el('sl_table_view').querySelector('tbody');
+      tbody.innerHTML='';
+      if (!date || !tableId) return;
+      let arr = [];
+      try { const snap = await get(ref(db,'bookings')); const val = snap.val() || {}; arr = Object.values(val).filter(b=>b.date===date && b.tableId===tableId); }
+      catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { arr = Object.values(JSON.parse(localStorage.getItem('ls_bookings')||'{}')).filter(b=>b.date===date && b.tableId===tableId); } else { throw e; } }
+      const pmap = {}; for (const p of players) { pmap[p.username||p.id] = p; }
+      arr.sort((a,b)=> (a.slot||'').localeCompare(b.slot||''));
+      for (const b of arr) { const tr=document.createElement('tr'); const p=pmap[b.playerUsername]||{}; tr.innerHTML = `<td>${b.slot}</td><td>${b.playerUsername}</td><td>${p.name||''}</td><td>${b.seats||1}</td>`; tbody.appendChild(tr); }
+    }
+
+    async function loadAnalytics() {
+      const psnap = await get(ref(db,'players')); const tsnap = await get(ref(db,'tables'));
+      const now = new Date(); const yyyy=now.getFullYear(); const mm=String(now.getMonth()+1).padStart(2,'0'); const dd=String(now.getDate()).padStart(2,'0'); const tdate=`${yyyy}-${mm}-${dd}`;
+      const bsnap = await get(ref(db,'bookings')); const txsnap = await get(ref(db,'transactions')); const csnap = await get(ref(db,'rechargeCodes')); const day = await get(ref(db,'dayBlocks/' + tdate));
+      const pcount = psnap.exists()? Object.keys(psnap.val()||{}).length : 0;
+      const tcount = tsnap.exists()? Object.keys(tsnap.val()||{}).length : 0;
+      let bcount = 0; if (bsnap.exists()) { Object.values(bsnap.val()).forEach(d=>{ if (d.date===tdate) bcount++; }); }
+      let rev = 0; if (txsnap.exists()) { Object.values(txsnap.val()).forEach(d=>{ if (d.type==='booking' && d.createdAt) { const dt = new Date(d.createdAt); const ds = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; if (ds===tdate) rev += (d.amount||0); } }); }
+      let used=0; let total=0; if (csnap.exists()) { Object.values(csnap.val()).forEach(d=>{ total++; if (d.isUsed) used++; }); }
+      el('an_players').textContent = String(pcount);
+      el('an_tables').textContent = String(tcount);
+      el('an_bookings').textContent = String(bcount);
+      el('an_rev').textContent = `₹${Math.abs(rev)}`;
+      el('an_codes').textContent = `${used}/${total}`;
+      el('an_day').textContent = day.exists()? `Blocked • ${(day.val().reason||'')}` : 'None';
+    }
 
     (async () => { try {
       await loadTables();
@@ -529,23 +639,14 @@
       await loadAnalytics();
       showSection('sec_dashboard');
       await slotList();
+      await renderCalendar();
+      onValue(ref(db,'tables'), async ()=>{ await loadTables(); await renderSlotsAdmin(); });
+      onValue(ref(db,'players'), async ()=>{ await loadPlayers(); renderPlayersTable(); renderPlayerSelect(); });
+      onValue(ref(db,'rechargeCodes'), async ()=>{ await listCodes(); });
+      onValue(ref(db,'bookings'), async ()=>{ await todayBookings(); await slotList(); await loadAnalytics(); await renderCalendar(); });
+      onValue(ref(db,'transactions'), async ()=>{ await listTx(); await loadAnalytics(); });
+      onValue(ref(db,'dayBlocks'), async ()=>{ await loadAnalytics(); await renderCalendar(); });
     } catch (e) { showErr(e); } })();
   </script>
 </body>
 </html>
-    async function loadAnalytics() {
-      const playersSnap = await getDocs(collection(db,'players'));
-      const tablesSnap = await getDocs(collection(db,'tables'));
-      const now = new Date(); const yyyy=now.getFullYear(); const mm=String(now.getMonth()+1).padStart(2,'0'); const dd=String(now.getDate()).padStart(2,'0'); const tdate=`${yyyy}-${mm}-${dd}`;
-      const bookingsSnap = await getDocs(query(collection(db,'bookings'), where('date','==',tdate)));
-      const txSnap = await getDocs(query(collection(db,'transactions')));
-      let rev = 0; txSnap.forEach(s=>{ const d=s.data(); if (d.type==='booking' && d.createdAt) { const dt = new Date(d.createdAt); const ds = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`; if (ds===tdate) rev += (d.amount||0); } });
-      const codesSnap = await getDocs(collection(db,'rechargeCodes')); let used=0; let total=0; codesSnap.forEach(s=>{ const d=s.data(); total++; if (d.isUsed) used++; });
-      const dayBlock = await getDoc(doc(db,'dayBlocks',tdate));
-      el('an_players').textContent = String(playersSnap.size);
-      el('an_tables').textContent = String(tablesSnap.size);
-      el('an_bookings').textContent = String(bookingsSnap.size);
-      el('an_rev').textContent = `₹${Math.abs(rev)}`;
-      el('an_codes').textContent = `${used}/${total}`;
-      el('an_day').textContent = dayBlock.exists()? `Blocked • ${dayBlock.data().reason||''}` : 'None';
-    }
