@@ -608,8 +608,25 @@
       try { const snap = await get(ref(db,'bookings')); const val = snap.val() || {}; arr = Object.values(val).filter(b=>b.date===date && b.tableId===tableId); }
       catch(e){ const s = String(e && e.message || '').toLowerCase(); if (s.includes('offline') || (e && e.code==='unavailable')) { arr = Object.values(JSON.parse(localStorage.getItem('ls_bookings')||'{}')).filter(b=>b.date===date && b.tableId===tableId); } else { throw e; } }
       const pmap = {}; for (const p of players) { pmap[p.username||p.id] = p; }
-      arr.sort((a,b)=> (a.slot||'').localeCompare(b.slot||''));
-      for (const b of arr) { const tr=document.createElement('tr'); const p=pmap[b.playerUsername]||{}; tr.innerHTML = `<td>${b.slot}</td><td>${b.playerUsername}</td><td>${p.name||''}</td><td>${b.seats||1}</td>`; tbody.appendChild(tr); }
+      const grouped = {};
+      for (const b of arr) {
+        const key = b.slot || '';
+        const p = pmap[b.playerUsername] || {};
+        const g = grouped[key] || { users: new Set(), names: new Set(), seats: 0 };
+        g.users.add(b.playerUsername);
+        if (p.name) g.names.add(p.name);
+        g.seats += (b.seats || 1);
+        grouped[key] = g;
+      }
+      const slots = Object.keys(grouped).sort((a,b)=>a.localeCompare(b));
+      for (const s of slots) {
+        const g = grouped[s];
+        const tr = document.createElement('tr');
+        const users = Array.from(g.users).join(', ');
+        const names = Array.from(g.names).join(', ');
+        tr.innerHTML = `<td>${s}</td><td>${users}</td><td>${names}</td><td>${g.seats}</td>`;
+        tbody.appendChild(tr);
+      }
     }
 
     async function loadAnalytics() {

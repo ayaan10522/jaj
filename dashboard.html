@@ -153,22 +153,25 @@
 
     
 
+    let slotsRenderToken = 0;
     async function renderSlots() {
+      const token = ++slotsRenderToken;
       const date = document.getElementById('bk_date').value;
       const tableId = document.getElementById('bk_table').value;
       const wrap = document.getElementById('slots');
-      wrap.innerHTML = '';
-      if (!date || !tableId) return;
+      if (!date || !tableId) { if (token === slotsRenderToken) wrap.innerHTML = ''; return; }
       let dayData = null; try { const daySnap = await get(ref(db,'dayBlocks/' + date)); dayData = daySnap.exists()?daySnap.val():null; } catch(e){ if (isOffline(e)) { const ld = lsGetDoc('dayBlocks', date); dayData = ld ? ld : null; } else throw e; }
       const banner = document.getElementById('dayBanner');
-      if (dayData && dayData.noTT) { banner.style.display='block'; banner.textContent = `No TT today • ${dayData.reason || ''}`; } else { banner.style.display='none'; banner.textContent=''; }
       let table = {}; try { const tableSnap = await get(ref(db,'tables/' + tableId)); table = tableSnap.exists()?tableSnap.val():{}; } catch(e){ if (isOffline(e)) { table = lsGetDoc('tables', tableId) || {}; } else throw e; }
       let slots = table.slots || [];
       if (!Array.isArray(slots)) { slots = Object.values(slots || {}); }
       const uniqueSlots = Array.from(new Set(slots));
-      if (!slots.length) { const div=document.createElement('div'); div.className='notice'; div.textContent='No slots configured by admin'; wrap.appendChild(div); return; }
       let used = {}; try { const bsnap = await get(ref(db,'bookings')); const bval = bsnap.val() || {}; Object.values(bval).forEach(d=>{ if (d.date===date && d.tableId===tableId) { used[d.slot] = (used[d.slot]||0) + (d.seats||1); } }); } catch(e){ if (isOffline(e)) { const all = lsAll('bookings').filter(b=>b.date===date && b.tableId===tableId); for (const d of all) { used[d.slot] = (used[d.slot]||0) + (d.seats||1); } } else throw e; }
       let blockedRanges = []; try { const msnap = await get(ref(db,'maintenanceBlocks')); const mval = msnap.val() || {}; blockedRanges = Object.values(mval).filter(b=>b.date===date && b.tableId===tableId); } catch(e){ if (isOffline(e)) { blockedRanges = lsAll('maintenanceBlocks').filter(b=>b.date===date && b.tableId===tableId); } else throw e; }
+      if (token !== slotsRenderToken) return;
+      if (dayData && dayData.noTT) { banner.style.display='block'; banner.textContent = `No TT today • ${dayData.reason || ''}`; } else { banner.style.display='none'; banner.textContent=''; }
+      wrap.innerHTML = '';
+      if (!uniqueSlots.length) { const div=document.createElement('div'); div.className='notice'; div.textContent='No slots configured by admin'; wrap.appendChild(div); return; }
       for (const s of uniqueSlots) {
         const div = document.createElement('div');
         const cap = table.capacity || 0;
